@@ -1,0 +1,5 @@
+* codestral.txt
+
+This is a Vim plugin that allows you to interact with the Codestral AI model.
+
+To open the chat buffer, run the `:CodestralChat` command. To disable the plugin, run the `:CodestralDisable` command.

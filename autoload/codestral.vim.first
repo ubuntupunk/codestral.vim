@@ -1,0 +1,177 @@
+" File:plugin/codestral.vim"
+" Description: This file contains the Vimscript code for the Codestral plugin.
+
+"Configuration variables"
+let g:codestral_api_key = $CODESTRAL_API_KEY " Get API key from environment variable"
+let g:codestral_api_chat_url = 'https://codestral.mistral.ai/v1/chat/completions'
+let g:codestral_api_completion_url = 'https://codestral.mistral.ai/v1/fim/completions'
+
+
+function! CodestralDisable()
+    let g:codestral_enabled = 0
+endfunction
+
+function! CodestralHandleResponse(job_id, data, event)
+    if a:event ==# 'stdout'
+        let l:response = '' " Initialize l:response to an empty string
+        try
+            let l:response = json_decode(a:data)
+            if has_key(l:response, 'error')
+                echoerr 'Codestral API Error: ' . l:response.error.message
+            else
+                call s:processChatResponse(l:response)
+            endif
+        catch /JSONDecodeError/
+            echoerr 'Error decoding JSON response from Codestral API: ' . a:data
+        endtry
+    elseif a:event ==# 'stderr'
+        echoerr 'Codestral API request failed: ' . a:data
+    endif
+endfunction
+
+function! s:processChatResponse(response)
+    if !has_key(a:response, 'choices')
+        echoerr "Error: 'choices' key not found in API response. Check the raw response for details."
+        return
+    endif
+
+    " Extract the content directly
+    let l:message_content = a:response.choices[0].message.content
+
+    " 1. Decode HTML entities
+    let l:message_content = s:decodeHtmlEntities(l:message_content)
+
+    " 2. Replace newlines with Vim newlines
+    let l:message_content = substitute(l:message_content, '\n', "\n", 'g')
+
+    " 3. Remove remaining problematic characters (carefully)
+    let l:message_content = substitute(l:message_content, '[[:cntrl:]]', '', 'g')  " Only remove control characters now
+
+    " Display the message content (you can adapt this part as needed)
+    call s:displayChatMessages([l:message_content])  " Pass as a list
+endfunction
+
+function! s:decodeHtmlEntities(str)
+    " Decode common HTML entities using a regular expression
+    let l:str = substitute(a:str, '&quot;', '"', 'g')
+    let l:str = substitute(l:str, '&#x27;', "'", 'g')
+    let l:str = substitute(l:str, '&amp;', '&', 'g')
+    let l:str = substitute(l:str, '&lt;', '<', 'g')
+    let l:str = substitute(l:str, '&gt;', '>', 'g')
+    return l:str
+endfunction
+
+function! s:displayChatMessages(messages)
+    new
+    for i in range(len(a:messages))
+        let l:message = printf("%d. %s", i+1, a:messages[i])
+        call append(line('$'), l:message)
+    endfor
+    nnoremap <buffer> <CR> :call s:insertChatResponse(line('.') - 1)<CR>
+    nnoremap <buffer> <1-9> :call s:insertChatResponse(str2nr(nr2char(v:char)) - 1)<CR>
+endfunction
+
+function! s:insertChatResponse(index)
+    let l:response = getline(line('.') + a:index)
+    let l:response = matchstr(l:response, '\d+\. \(.*\)')
+    normal! o
+    normal!a
+    call append(line('.'), split(l:response, '\n'))
+    normal! k
+endfunction
+
+function! s:sendChatRequest(message)
+    let l:data = json_encode({'model': 'codestral-latest', 'messages': [{'role': 'user', 'content': a:message}]})
+    let l:headers = {'Content-Type': 'application/json', 'Authorization': 'Bearer ' . g:codestral_api_key}
+    let l:curl_command = 'curl -s -X POST -H "Content-Type: application/json" -H "Authorization: Bearer ' . g:codestral_api_key . '" -d ' . shellescape(l:data) . ' ' . g:codestral_api_chat_url . ' > /tmp/codestral_response' " Redirect output to a file
+    let l:exit_code = system(l:curl_command)
+    if l:exit_code != 0
+        echoerr 'Error: curl command failed with exit code ' . l:exit_code . ': ' . system('echo $?')  " Display the exit code
+        let l:error_message = system('cat /tmp/codestral_response 2>/dev/null || echo "Curl output not found"') " Capture potential error messages from curl
+        echoerr l:error_message
+        return
+    endif
+    let l:response = readfile('/tmp/codestral_response')[0] " Read the response from the file
+    echomsg "Raw API Response: " . l:response "Added line to print raw response"
+    call delete('/tmp/codestral_response') " Clean up the temporary file. IMPORTANT!
+    call CodestralHandleResponse(0, l:response, 'stdout')
+endfunction
+
+
+function! OpenChatBuffer()
+    if exists('g:codestral_enabled') && g:codestral_enabled == 0
+        return
+    endif
+    let l:input = input("Enter your message: ")
+    if l:input != ""
+        call s:sendChatRequest(l:input)
+    endif
+endfunction
+
+function! CodestralEnabled()
+    if exists('g:codestral_enabled') && g:codestral_enabled == 0
+        return
+    endif
+endfunction
+
+function! codestral#CompletionEnable()
+    let g:codestral_completion_enabled = 1
+    setlocal completefunc=codestral#Complete
+endfunction
+
+function! codestral#CompletionDisable()
+    let g:codestral_completion_enabled = 0
+    "setlocal completefunc= "Commented out to avoid potential conflicts
+endfunction
+
+function! codestral#Complete(findstart, base)
+    if !g:codestral_completion_enabled
+        return []
+    endif
+
+    let l:context = getline(line('.')-5, line('.')-1)
+
+    let l:completions = s:getCodestralCompletions(a:base, l:context)
+
+    return l:completions
+endfunction
+
+function! s:getCodestralCompletions(base, context) abort
+    let l:data = json_encode({
+        \ 'model': 'codestral-latest',  " Or the appropriate model name
+        \ 'prompt': join(a:context, "\n") . a:base,  " Combine context and base for prompt
+        \ 'max_tokens': 50,  " Adjust as needed
+        \ 'temperature': 0.2,  " Adjust as needed
+        \ 'stop': ["\n"]  " Stop at newline
+        \ })
+
+    let l:headers = {'Content-Type': 'application/json', 'Authorization': 'Bearer ' . g:codestral_api_key}
+
+    let l:curl_command = 'curl -s -X POST -H "Content-Type: application/json" -H "Authorization: Bearer ' . g:codestral_api_key . '" -d ' . shellescape(l:data) . ' ' . g:codestral_api_completion_url . ' > /tmp/codestral_completion_response'
+
+    let l:exit_code = system(l:curl_command)
+    if l:exit_code != 0
+        echoerr 'Completion request failed: ' . l:exit_code
+        return []
+    endif
+
+    let l:response = json_decode(readfile('/tmp/codestral_completion_response')[0])
+    call delete('/tmp/codestral_completion_response')
+
+    if has_key(l:response, 'error')
+        echoerr 'Codestral API Error: ' . l:response.error.message
+        return []
+    endif
+
+    if !has_key(l:response, 'choices') || empty(l:response.choices)
+        return []
+    endif
+
+    " Extract completions from the response
+    let l:completions = []
+    for choice in l:response.choices
+        let l:completions += [choice.text]
+    endfor
+
+    return l:completions
+endfunction

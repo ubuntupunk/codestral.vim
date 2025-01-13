@@ -1,5 +1,11 @@
+" Created by Ubuntupunk on 12 January 2025
+" Last modified on 13 January 2025
+" copyright: Copyright (c) 2025
 " File:plugin/codestral.vim"
 " Description: This file contains the Vimscript code for the Codestral plugin.
+" 
+" This plugin provides integration with the Codestral API for code completions
+" and chat-based interactions.
 
 "Configuration variables"
 let g:codestral_api_key = $CODESTRAL_API_KEY " Get API key from environment variable"

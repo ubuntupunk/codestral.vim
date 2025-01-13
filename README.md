@@ -1,6 +1,8 @@
+<a href="https://www.buymeacoffee.com/ubuntupunk" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/default-orange.png" alt="Buy Me A Coffee" height="41" width="174"></a>
+
 # Codestral Vim Plugin
 
-This Vim plugin integrates with the Codestral AI API to provide code completions and a chat interface directly within Vim.
+This Vim plugin integrates with the Codestral AI API to provide basic code completions and a simple chat interface directly within Vim.
 
 ## Features
 
@@ -42,6 +44,8 @@ This Vim plugin integrates with the Codestral AI API to provide code completions
 ## Contributing
 
 Contributions are welcome! Please open an issue or submit a pull request.
+The original repo is [ubuntupunk/codestral.vim](https://github.com/ubuntupunk/codestral.vim)
+
 
 ## License
 
